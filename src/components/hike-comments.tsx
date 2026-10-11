@@ -94,7 +94,7 @@ export function HikeComments({
             return (
               <li key={comment.id} className="rounded-2xl border border-border bg-card p-4">
                 <p className="text-sm font-medium">
-                  <PersonName name={comment.displayName} avatarUrl={comment.avatarUrl} />
+                  <PersonName name={comment.displayName} userId={comment.userId} avatarUrl={comment.avatarUrl} />
                 </p>
                 <p className="text-sm text-muted-foreground">{formatHikeDate(comment.createdAt.slice(0, 10))}</p>
                 {editing ? (

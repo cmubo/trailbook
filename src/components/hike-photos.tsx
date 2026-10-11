@@ -145,7 +145,7 @@ export function HikePhotos({
                 )}
                 {photo.caption ? <p>{photo.caption}</p> : null}
                 <p className="text-sm text-muted-foreground">
-                  <PersonName name={photo.displayName} avatarUrl={photo.avatarUrl} />
+                  <PersonName name={photo.displayName} userId={photo.userId} avatarUrl={photo.avatarUrl} />
                 </p>
                 {isCover ? <p className="text-sm font-medium">Cover photo</p> : null}
                 <div className="flex flex-wrap gap-2">

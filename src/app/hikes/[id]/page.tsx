@@ -73,7 +73,7 @@ export default async function HikePage({ params }: PageProps<"/hikes/[id]">) {
           <ul className="flex flex-col gap-1">
             {hike.participants.map((person) => (
               <li key={person.id}>
-                <PersonName name={person.displayName} avatarUrl={person.avatarUrl} />
+                <PersonName name={person.displayName} userId={person.id} avatarUrl={person.avatarUrl} />
               </li>
             ))}
           </ul>

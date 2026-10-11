@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ProfileAvatar } from "@/components/profile-avatar";
 import { Button } from "@/components/ui/button";
 import { removeAvatar, saveAvatar, saveDisplayName } from "@/lib/profile/actions";
 import { resizeToAvatar } from "@/lib/profile/resize-avatar";
@@ -99,13 +100,12 @@ export function ProfileForm({
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-3">
-        {avatarUrl ? (
-          // Signed URLs expire and point at the private storage host.
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={avatarUrl} alt="" className="size-24 rounded-full object-cover" />
-        ) : (
-          <p className="text-sm text-muted-foreground">No photo yet.</p>
-        )}
+        <ProfileAvatar
+          name={name.trim() ? name : displayName}
+          userId={userId}
+          avatarUrl={avatarUrl}
+          size="lg"
+        />
         <label className="flex flex-col gap-2 text-sm font-medium">
           Photo
           <input

@@ -104,10 +104,10 @@ export function ProfileForm({
           name={name.trim() ? name : displayName}
           userId={userId}
           avatarUrl={avatarUrl}
-          size="lg"
+          size="md"
         />
         <label className="flex flex-col gap-2 text-sm font-medium">
-          Photo
+          Change photo
           <input
             ref={fileInput}
             type="file"
@@ -115,7 +115,7 @@ export function ProfileForm({
             className="text-sm font-normal"
           />
         </label>
-        <p className="text-sm text-muted-foreground">JPEG, PNG, or WebP. It is cropped and resized before upload.</p>
+        <p className="text-sm text-ink-muted">JPEG, PNG, or WebP. It is cropped and resized before upload.</p>
         <div className="flex flex-wrap gap-2">
           <Button type="button" className="h-11 w-fit px-4" disabled={pending} onClick={uploadAvatar}>
             {pending ? "Saving…" : "Save photo"}

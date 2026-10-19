@@ -25,6 +25,7 @@ export type HikeRecord = {
   ratingCount: number;
   coverPhotoPath: string | null;
   coverUrl: string | null;
+  photoCount: number;
 };
 
 export type HikeCommentRecord = {
@@ -77,7 +78,7 @@ type RatingRow = {
 
 export async function loadJournal(): Promise<{ hikes: HikeRecord[]; people: Person[] }> {
   const supabase = await createClient();
-  const [hikesResult, participantsResult, profilesResult, ratingsResult, rolesResult] =
+  const [hikesResult, participantsResult, profilesResult, ratingsResult, rolesResult, photosResult] =
     await Promise.all([
       supabase
         .from("hikes")
@@ -85,9 +86,10 @@ export async function loadJournal(): Promise<{ hikes: HikeRecord[]; people: Pers
         .order("hike_date", { ascending: false })
         .order("title", { ascending: true }),
       supabase.from("hike_participants").select("hike_id, user_id"),
-      supabase.from("profiles").select("id, display_name"),
+      supabase.from("profiles").select("id, display_name, avatar_path"),
       supabase.from("hike_rating_summaries").select("hike_id, average_score, rating_count"),
       supabase.from("user_roles").select("user_id, status"),
+      supabase.from("hike_photos").select("hike_id"),
     ]);
 
   if (
@@ -95,13 +97,32 @@ export async function loadJournal(): Promise<{ hikes: HikeRecord[]; people: Pers
     participantsResult.error ||
     profilesResult.error ||
     ratingsResult.error ||
-    rolesResult.error
+    rolesResult.error ||
+    photosResult.error
   ) {
     throw new Error("Hikes could not be loaded.");
   }
 
-  const people = toPeople(profilesResult.data ?? [], rolesResult.data ?? []);
-  const names = new Map(people.map((person) => [person.id, person.displayName]));
+  const people = toPeople(
+    (profilesResult.data ?? []).map((profile) => ({
+      id: profile.id,
+      display_name: profile.display_name,
+    })),
+    rolesResult.data ?? [],
+  );
+  const avatarUrls = await signAvatarPaths(
+    supabase,
+    (profilesResult.data ?? []).map((profile) => profile.avatar_path),
+  );
+  const profiles = new Map(
+    (profilesResult.data ?? []).map((profile) => [
+      profile.id,
+      {
+        displayName: profile.display_name,
+        avatarUrl: profile.avatar_path ? (avatarUrls.get(profile.avatar_path) ?? null) : null,
+      },
+    ]),
+  );
   const ratings = new Map<string, RatingRow>();
   for (const row of ratingsResult.data ?? []) {
     if (row.hike_id) {
@@ -109,13 +130,19 @@ export async function loadJournal(): Promise<{ hikes: HikeRecord[]; people: Pers
     }
   }
 
+  const photoCounts = new Map<string, number>();
+  for (const row of photosResult.data ?? []) {
+    photoCounts.set(row.hike_id, (photoCounts.get(row.hike_id) ?? 0) + 1);
+  }
+
   const participantsByHike = new Map<string, { id: string; displayName: string; avatarUrl: string | null }[]>();
   for (const row of participantsResult.data ?? []) {
     const list = participantsByHike.get(row.hike_id) ?? [];
+    const profile = profiles.get(row.user_id);
     list.push({
       id: row.user_id,
-      displayName: names.get(row.user_id) ?? "Member",
-      avatarUrl: null,
+      displayName: profile?.displayName ?? "Member",
+      avatarUrl: profile?.avatarUrl ?? null,
     });
     participantsByHike.set(row.hike_id, list);
   }
@@ -127,7 +154,12 @@ export async function loadJournal(): Promise<{ hikes: HikeRecord[]; people: Pers
   const hikes = await withCoverUrls(
     supabase,
     (hikesResult.data ?? []).map((row) =>
-      toHike(row, participantsByHike.get(row.id) ?? [], ratings.get(row.id)),
+      toHike(
+        row,
+        participantsByHike.get(row.id) ?? [],
+        ratings.get(row.id),
+        photoCounts.get(row.id) ?? 0,
+      ),
     ),
   );
 
@@ -146,16 +178,17 @@ export async function loadHike(id: string): Promise<HikeRecord | null> {
     return null;
   }
 
-  const [participantsResult, ratingResult] = await Promise.all([
+  const [participantsResult, ratingResult, photosResult] = await Promise.all([
     supabase.from("hike_participants").select("user_id").eq("hike_id", id),
     supabase
       .from("hike_rating_summaries")
       .select("hike_id, average_score, rating_count")
       .eq("hike_id", id)
       .maybeSingle(),
+    supabase.from("hike_photos").select("id").eq("hike_id", id),
   ]);
 
-  if (participantsResult.error || ratingResult.error) {
+  if (participantsResult.error || ratingResult.error || photosResult.error) {
     throw new Error("The hike could not be loaded.");
   }
 
@@ -190,7 +223,96 @@ export async function loadHike(id: string): Promise<HikeRecord | null> {
     }))
     .sort((a, b) => a.displayName.localeCompare(b.displayName, "en"));
 
-  return toHike(hikeResult.data, participants, ratingResult.data);
+  return toHike(hikeResult.data, participants, ratingResult.data, photosResult.data?.length ?? 0);
+}
+
+export async function loadTrailNumber(hikeId: string) {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("hikes").select("id, hike_date, title");
+  if (error) {
+    throw new Error("The hike could not be loaded.");
+  }
+
+  const ordered = [...(data ?? [])].sort((left, right) => {
+    const byDate = left.hike_date.localeCompare(right.hike_date);
+    return byDate === 0 ? left.title.localeCompare(right.title, "en") : byDate;
+  });
+  const index = ordered.findIndex((row) => row.id === hikeId);
+  return index < 0 ? 0 : index + 1;
+}
+
+export type DirectoryMember = {
+  id: string;
+  displayName: string;
+  avatarUrl: string | null;
+  hikeCount: number;
+  photoCount: number;
+};
+
+export async function loadMemberDirectory(): Promise<{
+  members: DirectoryMember[];
+  hikeCount: number;
+  sinceYear: string | null;
+}> {
+  const supabase = await createClient();
+  const [profilesResult, rolesResult, participantsResult, photosResult, hikesResult] = await Promise.all([
+    supabase.from("profiles").select("id, display_name, avatar_path"),
+    supabase.from("user_roles").select("user_id, status"),
+    supabase.from("hike_participants").select("user_id"),
+    supabase.from("hike_photos").select("user_id"),
+    supabase.from("hikes").select("hike_date"),
+  ]);
+
+  if (
+    profilesResult.error ||
+    rolesResult.error ||
+    participantsResult.error ||
+    photosResult.error ||
+    hikesResult.error
+  ) {
+    throw new Error("Members could not be loaded.");
+  }
+
+  const active = new Set(
+    (rolesResult.data ?? []).filter((role) => role.status === "active").map((role) => role.user_id),
+  );
+  const hikeCounts = new Map<string, number>();
+  for (const row of participantsResult.data ?? []) {
+    if (!active.has(row.user_id)) {
+      continue;
+    }
+    hikeCounts.set(row.user_id, (hikeCounts.get(row.user_id) ?? 0) + 1);
+  }
+
+  const photoCounts = new Map<string, number>();
+  for (const row of photosResult.data ?? []) {
+    if (!active.has(row.user_id)) {
+      continue;
+    }
+    photoCounts.set(row.user_id, (photoCounts.get(row.user_id) ?? 0) + 1);
+  }
+
+  const avatarUrls = await signAvatarPaths(
+    supabase,
+    (profilesResult.data ?? []).map((profile) => profile.avatar_path),
+  );
+  const members = (profilesResult.data ?? [])
+    .filter((profile) => active.has(profile.id))
+    .map((profile) => ({
+      id: profile.id,
+      displayName: profile.display_name,
+      avatarUrl: profile.avatar_path ? (avatarUrls.get(profile.avatar_path) ?? null) : null,
+      hikeCount: hikeCounts.get(profile.id) ?? 0,
+      photoCount: photoCounts.get(profile.id) ?? 0,
+    }))
+    .sort((left, right) => left.displayName.localeCompare(right.displayName, "en"));
+  const years = (hikesResult.data ?? []).map((hike) => hike.hike_date.slice(0, 4)).sort();
+
+  return {
+    members,
+    hikeCount: hikesResult.data?.length ?? 0,
+    sinceYear: years[0] ?? null,
+  };
 }
 
 export async function loadPeople(): Promise<Person[]> {
@@ -226,6 +348,7 @@ function toHike(
   row: HikeRow,
   participants: { id: string; displayName: string; avatarUrl: string | null }[],
   rating: RatingRow | null | undefined,
+  photoCount: number,
 ): HikeRecord {
   const ratingCount = toNumber(rating?.rating_count) ?? 0;
 
@@ -245,6 +368,7 @@ function toHike(
     ratingCount,
     coverPhotoPath: row.cover_photo_path,
     coverUrl: null,
+    photoCount,
   };
 }
 

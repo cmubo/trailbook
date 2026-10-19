@@ -22,6 +22,7 @@ export type InvitationRow = {
   id: string;
   email: string;
   expiresOn: string;
+  expired: boolean;
 };
 
 const initialResult: MembershipResult = {};
@@ -33,54 +34,75 @@ export function MembershipPanel({
   members: MemberRow[];
   invitations: InvitationRow[];
 }) {
+  const waiting = invitations.filter((invitation) => !invitation.expired);
+  const expired = invitations.filter((invitation) => invitation.expired);
+
   return (
     <div className="flex flex-col gap-10">
       <InviteForm />
       <section className="flex flex-col gap-3">
+        <h2 className="font-heading text-2xl font-semibold tracking-tight">Waiting</h2>
+        {waiting.length === 0 ? (
+          <p className="text-sm text-ink-muted">No invitations are waiting.</p>
+        ) : (
+          <InvitationList invitations={waiting} />
+        )}
+      </section>
+      {expired.length > 0 ? (
+        <section className="flex flex-col gap-3">
+          <h2 className="font-heading text-2xl font-semibold tracking-tight">Expired</h2>
+          <p className="text-sm text-ink-muted">Cancel an expired invite before sending that address again.</p>
+          <InvitationList invitations={expired} />
+        </section>
+      ) : null}
+      <section className="flex flex-col gap-3">
         <h2 className="font-heading text-2xl font-semibold tracking-tight">Members</h2>
+        <p className="text-sm text-ink-muted">
+          Pausing someone signs them out everywhere. Their photos and comments stay on the hikes.
+        </p>
         <ul className="flex flex-col gap-3">
           {members.map((member) => (
             <li
               key={member.userId}
-              className="flex flex-col gap-3 rounded-lg border border-border bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+              className="flex flex-col gap-3 rounded-[20px] bg-paper px-4 py-4 shadow-card sm:flex-row sm:items-center sm:justify-between"
             >
               <div>
                 <p className="font-medium">{member.displayName}</p>
-                <p className="text-sm text-muted-foreground">{memberSummary(member)}</p>
+                <p className="text-sm text-ink-muted">{memberSummary(member)}</p>
               </div>
               {member.role === "member" ? (
                 member.status === "revoked" ? (
                   <AccessForm action={restoreMember} userId={member.userId} label="Restore access" />
                 ) : (
-                  <AccessForm action={revokeMember} userId={member.userId} label="Remove access" />
+                  <AccessForm action={revokeMember} userId={member.userId} label="Pause access" />
                 )
               ) : null}
             </li>
           ))}
         </ul>
       </section>
-      <section className="flex flex-col gap-3">
-        <h2 className="font-heading text-2xl font-semibold tracking-tight">Pending invitations</h2>
-        {invitations.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No invitations are waiting.</p>
-        ) : (
-          <ul className="flex flex-col gap-3">
-            {invitations.map((invitation) => (
-              <li
-                key={invitation.id}
-                className="flex flex-col gap-3 rounded-lg border border-border bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div>
-                  <p className="font-medium">{invitation.email}</p>
-                  <p className="text-sm text-muted-foreground">Pending · expires {invitation.expiresOn}</p>
-                </div>
-                <InvitationForm invitationId={invitation.id} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
     </div>
+  );
+}
+
+function InvitationList({ invitations }: { invitations: InvitationRow[] }) {
+  return (
+    <ul className="flex flex-col gap-3">
+      {invitations.map((invitation) => (
+        <li
+          key={invitation.id}
+          className="flex flex-col gap-3 rounded-[20px] bg-paper px-4 py-4 shadow-card sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div>
+            <p className="font-medium">{invitation.email}</p>
+            <p className="text-sm text-ink-muted">
+              {invitation.expired ? `Expired ${invitation.expiresOn}` : `Waiting · expires ${invitation.expiresOn}`}
+            </p>
+          </div>
+          <InvitationForm invitationId={invitation.id} />
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -97,12 +119,12 @@ function InviteForm() {
           name="email"
           autoComplete="email"
           required
-          className="h-11 rounded-lg border border-input bg-card px-3 text-base font-normal outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="h-12 rounded-[12px] border border-line bg-paper px-3 text-base font-normal outline-none focus-ring"
         />
       </label>
       <Result state={state} />
-      <Button type="submit" className="h-11 w-full sm:w-auto" disabled={pending}>
-        {pending ? "Sending…" : "Send invitation"}
+      <Button type="submit" className="h-12 w-full rounded-full sm:w-auto" disabled={pending}>
+        {pending ? "Sending…" : "Send invite"}
       </Button>
     </form>
   );
@@ -136,8 +158,8 @@ function InvitationForm({ invitationId }: { invitationId: string }) {
   return (
     <form action={action} className="flex flex-col items-start gap-2">
       <input type="hidden" name="invitationId" value={invitationId} />
-      <Button type="submit" variant="outline" disabled={pending}>
-        Revoke invitation
+      <Button type="submit" variant="outline" className="h-11" disabled={pending}>
+        Cancel invite
       </Button>
       <Result state={state} />
     </form>
